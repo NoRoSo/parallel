@@ -1,3 +1,3 @@
-C:/Users/Noe Soto/CLionProjects/parallel/cmake-build-debug/CMakeFiles/Project2.dir
-C:/Users/Noe Soto/CLionProjects/parallel/cmake-build-debug/CMakeFiles/edit_cache.dir
-C:/Users/Noe Soto/CLionProjects/parallel/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+C:/Users/Noe Soto/Documents/GitHub/parallel/cmake-build-debug/CMakeFiles/Project2.dir
+C:/Users/Noe Soto/Documents/GitHub/parallel/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/Noe Soto/Documents/GitHub/parallel/cmake-build-debug/CMakeFiles/rebuild_cache.dir
