@@ -49,15 +49,17 @@
 
 #define DECK_SIZE 52
 #define NUM_THREADS 6
-#define NUM_ROUNDS 1
+#define NUM_ROUNDS 2
 
 //GLOBAL VARIABLES
 //mutexes
 int CURRENT_DEALER = 0; //who is current dealer this round
 pthread_mutex_t beginLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t drawCardLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t nextRoundLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t isDealing = PTHREAD_COND_INITIALIZER; //condition to signal that dealer is done
-pthread_barrier_t barrier;
+pthread_barrier_t allPlayers;
+pthread_barrier_t justPlayers;
 int winner = 0;
 
 //deck
@@ -82,14 +84,17 @@ void shuffleCards();
 void giveCard();
 void printDeck();
 int drawCard();
-void resetHands();
+void resetGame();
 void returnCard(int threadID);
 
 int main(){
-    srand(10); //for shuffling the card
+    srand(100); //for shuffling the card
     populateDeck();
 
-    pthread_barrier_init(&barrier, NULL, NUM_THREADS);
+    //making some barriers I'll be using to make everyone wait.
+    pthread_barrier_init(&allPlayers, NULL, NUM_THREADS);
+    pthread_barrier_init(&justPlayers, NULL, NUM_THREADS - 1);
+
     initPlayers(); //begins the game
 
     //joins all threads at the end just in case.
@@ -105,21 +110,19 @@ void *player(void *args){ //each player
 
     for(int roundNum = 1; roundNum <= NUM_ROUNDS; roundNum++){
         //begin game: dealer begins by giving each player 1 card
+        pthread_barrier_wait(&allPlayers); ///P1
         if(CURRENT_DEALER == threadID){
             beDealer(args);
             continue;
         }else{
-            pthread_cond_wait(&isDealing, &beginLock);
-            printf("thread == %d\n", threadID);
-            pthread_cond_signal(&isDealing);
+            pthread_barrier_wait(&allPlayers); ///P2
         }
-        pthread_mutex_unlock(&beginLock);
 
-        pthread_barrier_wait(&barrier); //waiting on dealer to start the game.
 
         //todo... IMPLEMENT THIS SECTION OF THE CODE
         while(!winner){
             // here: somehow specify which one goes first...
+            pthread_mutex_lock(&drawCardLock);
 
             if(!winner){ //checking to see if the previous one wasn't a winner
                 int card = drawCard();
@@ -131,20 +134,27 @@ void *player(void *args){ //each player
                 }
 
                 if(playerHand[threadID][0] == playerHand[CURRENT_DEALER][0] || playerHand[threadID][1] == playerHand[CURRENT_DEALER][0]){ //WINNER
-                    winner = 1;
-                    printf("PLAYER %d: wins round %d\n", threadID+1, roundNum);
+                    winner = threadID;
+//                    printf("PLAYER %d: wins round %d\n", threadID+1, roundNum);
                 }
-
                 returnCard(threadID);
-
-            }else{
-                printf("PLAYER %d: lost round %d\n", threadID+1, roundNum);
             }
 
+            pthread_mutex_unlock(&drawCardLock);
             //signal for the following one...
         }
 
-        pthread_barrier_wait(&barrier); //wait for next round to start.
+        if(winner == threadID){
+            printf("Player %d: wins round %d\n", threadID+1, roundNum);
+            pthread_barrier_wait(&justPlayers); ///P4
+        }else{
+            pthread_barrier_wait(&justPlayers); ///P4
+            printf("Player %d: lost round %d\n", threadID+1, roundNum);
+        }
+
+
+        pthread_barrier_wait(&allPlayers); ///P5 //wait for next round to start.
+        pthread_barrier_wait(&allPlayers); ///P6
     }
     return NULL;
 }
@@ -154,9 +164,8 @@ void *beDealer(void *args){
     * First, deal the cards to each player
     */
     int threadID = (int)args;
-    pthread_mutex_lock(&beginLock);
     printf("\ndealer :: thread == %d\n", threadID);
-    resetHands();
+    resetGame();
     populateDeck();
     shuffleCards();
 
@@ -167,16 +176,19 @@ void *beDealer(void *args){
 
     CURRENT_DEALER = (CURRENT_DEALER + 1) % 6;
 
-    for(int i = 0; i < NUM_THREADS; i++){
-        printf("i :: %d :: cards handed :: (%d , %d)\n", i, playerHand[i][0], playerHand[i][1]);
-    }
-    pthread_cond_signal(&isDealing);
-    pthread_mutex_unlock(&beginLock);
+//    for(int i = 0; i < NUM_THREADS; i++){
+//        printf("i :: %d :: cards handed :: (%d , %d)\n", i, playerHand[i][0], playerHand[i][1]);
+//    }
 
-    pthread_barrier_wait(&barrier); //starting the game
+    pthread_barrier_wait(&allPlayers); ///P2 //starting the game AKA done dealing cards
+
+
+
+    pthread_barrier_wait(&allPlayers); //beginning next round
 
     printf("PLAYER %d: Round ends\n", threadID + 1);
 
+    pthread_barrier_wait(&allPlayers);
     return NULL;
 }
 
@@ -211,7 +223,7 @@ void printHand(int threadID){
 
 void returnCard(int playerID){
     int cardToRemove = 1 + rand() % 2;
-    printf("random number == %d\n", cardToRemove);
+//    printf("random number == %d\n", cardToRemove);
     int cardNum;
     if(cardToRemove == 1){
         cardNum = playerHand[playerID][0];
@@ -225,11 +237,12 @@ void returnCard(int playerID){
     bottomOfDeck = (bottomOfDeck + 1) % DECK_SIZE;
 }
 
-void resetHands(){
+void resetGame(){
     for(int i = 0; i < NUM_THREADS; i++){
         playerHand[i][0] = -1;
         playerHand[i][1] = -1;
     }
+    winner = 0;
 }
 
 void populateDeck(){
