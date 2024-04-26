@@ -6,59 +6,68 @@
 #define NUM_THREADS 6
 #define NUM_ROUNDS 6
 
-//GLOBAL VARIABLES
-//mutexes
-int CURRENT_DEALER = 0; //who is current dealer this round
+///GLOBAL VARIABLES
+///mutexes
+int CURRENT_DEALER = 0; ///who is current dealer this round
 pthread_barrier_t allPlayers;
 pthread_barrier_t justPlayersEnding;
 pthread_barrier_t justPlayersBegin;
 int winner = 0;
 int nextPlayer = 1;
 
-//deck
+///deck
 int DECK_OF_CARDS[DECK_SIZE];
 int playerHand[NUM_THREADS][2] = {{0,0},{0,0},{0,0},{0,0},{0,0},{0,0}};
 pthread_t PLAYERS[NUM_THREADS];
 int topOfDeck = 0;
 int bottomOfDeck = 0;
 
-//logging variable
+///logging variable
 FILE *fptr;
+int SEED;
 
-//PROTOTYPES
-//player function
+///PROTOTYPES
+///player function
 void *player(void *arg);
 void *beDealer(void *arg);
 
-//helper functions
+///helper functions
 void initPlayers();
 void populateDeck();
 void shuffleCards();
-void giveCard();
 void printDeck();
 void printHand(int threadID);
 int drawCard();
 void resetGame();
 void returnCard(int threadID);
 
-int main(){
-    srand(100); //for shuffling the card
+int main(int argc, char *argv[]){
+    if(argc != 2){
+        printf("either not enough or too many arguments supplied, please read the instructions!\n");
+        printf("only use one argument which will be the seed when executing.\n");
+        return -1;
+    }
+    SEED = atoi(argv[1]);
+    srand(SEED); ///random seed
+
+
     populateDeck();
 
-    fptr = fopen("Soto_Project2_LOG.txt", "w"); //opening the log file
+    fptr = fopen("Soto_Project2_LOG.txt", "w"); ///opening the log file
 
-    //making some barriers I'll be using to make everyone wait.
+    ///making some barriers I'll be using to make everyone wait.
     pthread_barrier_init(&allPlayers, NULL, NUM_THREADS);
     pthread_barrier_init(&justPlayersEnding, NULL, NUM_THREADS - 1);
     pthread_barrier_init(&justPlayersBegin, NULL, NUM_THREADS - 1);
 
-    initPlayers(); //begins the game
+    initPlayers(); ///begins the game
 
-    //joins all threads at the end just in case.
+    ///joins all threads at the end just in case.
     for (int i = 0; i < NUM_THREADS; i++) {
         pthread_join(PLAYERS[i], NULL);
     }
 
+    ///removing all barriers
     pthread_barrier_destroy(&allPlayers);
     pthread_barrier_destroy(&justPlayersEnding);
     pthread_barrier_destroy(&justPlayersBegin);
@@ -68,21 +77,19 @@ int main(){
     return 0;
 }
 
-void *player(void *args){ //each player
+void *player(void *args){ ///each player
     int threadID = (int)args;
 
     for(int roundNum = 1; roundNum <= NUM_ROUNDS; roundNum++){
-        //begin game: dealer begins by giving each player 1 card
-        pthread_barrier_wait(&allPlayers); ///P1
+        ///begin game: dealer begins by giving each player 1 card
+        pthread_barrier_wait(&allPlayers); ////P1
         if(CURRENT_DEALER == threadID){
             beDealer(args);
             continue;
         }else{
-            pthread_barrier_wait(&allPlayers); ///P2
+            pthread_barrier_wait(&allPlayers); ////P2
         }
 
-
-        //todo... IMPLEMENT THIS SECTION OF THE CODE
         while(!winner){
             pthread_barrier_wait(&justPlayersBegin);
             if(!winner) {
@@ -100,7 +107,7 @@ void *player(void *args){ //each player
                     printf("PLAYER %d: hand %d %d\n", threadID+1, playerHand[threadID][0], playerHand[threadID][1]);
 
                     if (playerHand[threadID][0] == playerHand[CURRENT_DEALER][0] ||
-                        playerHand[threadID][1] == playerHand[CURRENT_DEALER][0]) { //WINNER
+                        playerHand[threadID][1] == playerHand[CURRENT_DEALER][0]) { ///WINNER
                         winner = threadID+1;
                         printHand(threadID);
                         fprintf(fptr, " <> Target card is %d\n", playerHand[CURRENT_DEALER][0]);
@@ -135,15 +142,15 @@ void *player(void *args){ //each player
 
         if(winner-1 == threadID){
             fprintf(fptr, "Player %d: wins round %d\n", threadID+1, roundNum);
-            pthread_barrier_wait(&justPlayersEnding); ///P4
+            pthread_barrier_wait(&justPlayersEnding); ////P4
         }else{
-            pthread_barrier_wait(&justPlayersEnding); ///P4
+            pthread_barrier_wait(&justPlayersEnding); ////P4
             fprintf(fptr, "Player %d: lost round %d\n", threadID+1, roundNum);
         }
 
 
-        pthread_barrier_wait(&allPlayers); ///P5 //wait for next round to start.
-        pthread_barrier_wait(&allPlayers); ///P6
+        pthread_barrier_wait(&allPlayers); ////P5 ///wait for next round to start.
+        pthread_barrier_wait(&allPlayers); ////P6
     }
     return NULL;
 }
@@ -159,22 +166,22 @@ void *beDealer(void *args){
 
     nextPlayer = (threadID + 1) % NUM_THREADS;
 
-    //hand one card to each player
+    ///hand one card to each player
     for(int i = 0; i < NUM_THREADS; i++){
             playerHand[i][0] = drawCard();
     }
 
     printf("\n\nPLAYER %d: Target Card %d\n", threadID+1, playerHand[threadID][0]);
 
-    pthread_barrier_wait(&allPlayers); ///P2 //starting the game AKA done dealing cards
+    pthread_barrier_wait(&allPlayers); ////P2 ///starting the game AKA done dealing cards
 
-    pthread_barrier_wait(&allPlayers); ///P5 //beginning next round
+    pthread_barrier_wait(&allPlayers); ////P5 ///beginning next round
 
     CURRENT_DEALER = (CURRENT_DEALER + 1) % NUM_THREADS;
     fprintf(fptr, "PLAYER %d: Round ends\n", threadID + 1);
     fprintf(fptr, "\n\n");
 
-    pthread_barrier_wait(&allPlayers); ///P6
+    pthread_barrier_wait(&allPlayers); ////P6
     return NULL;
 }
 
@@ -188,6 +195,8 @@ void initPlayers(){
 }
 
 void shuffleCards(){
+    srand(SEED); ///random seed
+
     for(int i = 0; i < DECK_SIZE - 1; i++){
         int j = i + rand() / (RAND_MAX / (DECK_SIZE - i) + 1);
         int t = DECK_OF_CARDS[j];
@@ -219,18 +228,20 @@ void printHand(int threadID){
     }
 }
 
-void returnCard(int playerID){
+void returnCard(int threadID){
+    srand(SEED); ///random seed
+
     int cardToRemove = 1 + rand() % 2;
     int cardNum;
     if(cardToRemove == 1){
-        cardNum = playerHand[playerID][0];
-        playerHand[playerID][0] = -1;
+        cardNum = playerHand[threadID][0];
+        playerHand[threadID][0] = -1;
     }else{
-        cardNum = playerHand[playerID][1];
-        playerHand[playerID][1] = -1;
+        cardNum = playerHand[threadID][1];
+        playerHand[threadID][1] = -1;
     }
 
-    fprintf(fptr, "PLAYER %d: discards %d at random\n", playerID+1, cardNum);
+    fprintf(fptr, "PLAYER %d: discards %d at random\n", threadID + 1, cardNum);
     DECK_OF_CARDS[bottomOfDeck] = cardNum;
     bottomOfDeck = (bottomOfDeck + 1) % DECK_SIZE;
 }
