@@ -4,15 +4,11 @@
 
 #define DECK_SIZE 52
 #define NUM_THREADS 6
-#define NUM_ROUNDS 50000
+#define NUM_ROUNDS 6
 
 //GLOBAL VARIABLES
 //mutexes
 int CURRENT_DEALER = 0; //who is current dealer this round
-//pthread_mutex_t beginLock = PTHREAD_MUTEX_INITIALIZER;
-//pthread_mutex_t drawCardLock = PTHREAD_MUTEX_INITIALIZER;
-//pthread_mutex_t nextRoundLock = PTHREAD_MUTEX_INITIALIZER;
-//pthread_cond_t isDealing = PTHREAD_COND_INITIALIZER; //condition to signal that dealer is done
 pthread_barrier_t allPlayers;
 pthread_barrier_t justPlayersEnding;
 pthread_barrier_t justPlayersBegin;
@@ -26,8 +22,8 @@ pthread_t PLAYERS[NUM_THREADS];
 int topOfDeck = 0;
 int bottomOfDeck = 0;
 
-
-
+//logging variable
+FILE *fptr;
 
 //PROTOTYPES
 //player function
@@ -49,6 +45,8 @@ int main(){
     srand(100); //for shuffling the card
     populateDeck();
 
+    fptr = fopen("Soto_Project2_LOG.txt", "w"); //opening the log file
+
     //making some barriers I'll be using to make everyone wait.
     pthread_barrier_init(&allPlayers, NULL, NUM_THREADS);
     pthread_barrier_init(&justPlayersEnding, NULL, NUM_THREADS - 1);
@@ -61,6 +59,12 @@ int main(){
         pthread_join(PLAYERS[i], NULL);
     }
 
+    pthread_barrier_destroy(&allPlayers);
+    pthread_barrier_destroy(&justPlayersEnding);
+    pthread_barrier_destroy(&justPlayersBegin);
+
+    fclose(fptr);
+
     return 0;
 }
 
@@ -71,7 +75,6 @@ void *player(void *args){ //each player
         //begin game: dealer begins by giving each player 1 card
         pthread_barrier_wait(&allPlayers); ///P1
         if(CURRENT_DEALER == threadID){
-            printf("\n\n\n\n\n\nROUND == %d\n", roundNum);
             beDealer(args);
             continue;
         }else{
@@ -86,7 +89,7 @@ void *player(void *args){ //each player
                 if (nextPlayer == threadID) {
                     printHand(threadID);
                     int card = drawCard();
-                    printf("\nPLAYER %d: draws %d\n", threadID+1,card);
+                    fprintf(fptr, "\nPLAYER %d: draws %d\n", threadID+1, card);
                     if (playerHand[threadID][0] == -1) {
                         playerHand[threadID][0] = card;
                     } else {
@@ -94,17 +97,27 @@ void *player(void *args){ //each player
                             playerHand[threadID][1] = card;
                     }
 
+                    printf("PLAYER %d: hand %d %d\n", threadID+1, playerHand[threadID][0], playerHand[threadID][1]);
+
                     if (playerHand[threadID][0] == playerHand[CURRENT_DEALER][0] ||
                         playerHand[threadID][1] == playerHand[CURRENT_DEALER][0]) { //WINNER
                         winner = threadID+1;
                         printHand(threadID);
-                        printf(" <> Target card is %d\n", playerHand[CURRENT_DEALER][0]);
+                        fprintf(fptr, " <> Target card is %d\n", playerHand[CURRENT_DEALER][0]);
+                        printf("PLAYER %d: WIN yes\n", threadID+1);
                     }else{
                         returnCard(threadID);
                         printHand(threadID);
-                        printf("\n");
+                        fprintf(fptr, "\n");
+                        printf("PLAYER %d: WIN no\n", threadID+1);
                         printDeck();
                     }
+
+                    printf("DECK:");
+                    for(int i = topOfDeck; i != bottomOfDeck; i = (i+1) % DECK_SIZE){
+                        printf(" %d", DECK_OF_CARDS[i]);
+                    }
+                    printf("\n");
 
                     nextPlayer = (nextPlayer + 1) % NUM_THREADS;
 
@@ -115,15 +128,17 @@ void *player(void *args){ //each player
                 } else {
                     pthread_barrier_wait(&justPlayersEnding);
                 }
+            }else{
+                pthread_barrier_wait(&justPlayersEnding);
             }
         }
 
         if(winner-1 == threadID){
-            printf("Player %d: wins round %d\n", threadID+1, roundNum);
+            fprintf(fptr, "Player %d: wins round %d\n", threadID+1, roundNum);
             pthread_barrier_wait(&justPlayersEnding); ///P4
         }else{
             pthread_barrier_wait(&justPlayersEnding); ///P4
-            printf("Player %d: lost round %d\n", threadID+1, roundNum);
+            fprintf(fptr, "Player %d: lost round %d\n", threadID+1, roundNum);
         }
 
 
@@ -148,14 +163,16 @@ void *beDealer(void *args){
     for(int i = 0; i < NUM_THREADS; i++){
             playerHand[i][0] = drawCard();
     }
+
+    printf("\n\nPLAYER %d: Target Card %d\n", threadID+1, playerHand[threadID][0]);
+
     pthread_barrier_wait(&allPlayers); ///P2 //starting the game AKA done dealing cards
-
-
 
     pthread_barrier_wait(&allPlayers); ///P5 //beginning next round
 
     CURRENT_DEALER = (CURRENT_DEALER + 1) % NUM_THREADS;
-    printf("PLAYER %d: Round ends\n", threadID + 1);
+    fprintf(fptr, "PLAYER %d: Round ends\n", threadID + 1);
+    fprintf(fptr, "\n\n");
 
     pthread_barrier_wait(&allPlayers); ///P6
     return NULL;
@@ -192,12 +209,12 @@ void printHand(int threadID){
     int card2 = playerHand[threadID][1];
 
     if(card1 != -1 && card2 != -1){
-        printf("PLAYER %d: hand (%d, %d)", threadID+1, card1, card2);
+        fprintf(fptr, "PLAYER %d: hand (%d, %d)", threadID+1, card1, card2);
     }else{
         if(card1 == -1){
-            printf("PLAYER %d: hand %d", threadID+1, card2);
+            fprintf(fptr, "PLAYER %d: hand %d", threadID+1, card2);
         }else{
-            printf("PLAYER %d: hand %d", threadID+1, card1);
+            fprintf(fptr, "PLAYER %d: hand %d", threadID+1, card1);
         }
     }
 }
@@ -213,8 +230,7 @@ void returnCard(int playerID){
         playerHand[playerID][1] = -1;
     }
 
-    printf("PLAYER %d: discards %d at random\n", playerID+1, cardNum);
-
+    fprintf(fptr, "PLAYER %d: discards %d at random\n", playerID+1, cardNum);
     DECK_OF_CARDS[bottomOfDeck] = cardNum;
     bottomOfDeck = (bottomOfDeck + 1) % DECK_SIZE;
 }
@@ -239,9 +255,9 @@ void populateDeck(){
 }
 
 void printDeck(){
-    printf("DECK:");
-    for(int i = 0; i < DECK_SIZE; i++){
-        printf(" %d", DECK_OF_CARDS[i]);
+    fprintf(fptr, "DECK:");
+    for(int i = topOfDeck; i != bottomOfDeck; i = (i + 1) % DECK_SIZE){
+        fprintf(fptr, " %d", DECK_OF_CARDS[i]);
     }
-    printf("\n");
+    fprintf(fptr, "\n");
 }
